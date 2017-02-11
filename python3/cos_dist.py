@@ -42,9 +42,3 @@ def cos_dist(a, b):
     else:
         return part_up / part_down
 
-
-if __name__ == "__main__":
-    a = "http://www.cnhongke.org/login?goto=%2Fpage%2Ftraining"
-    b = "http://www.cnhongke.org/login?goto=%2Farticle%2Fcategory%2Finformation"
-    print(cos_dist(a,b))
-    map()
