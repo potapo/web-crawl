@@ -6,7 +6,7 @@ from urllib.parse import urlparse, urlunparse
 from cos_dist import cos_dist
 from pymongo import MongoClient
 
-client = MongoClient('mooder.f4ck0.com', 27017)
+client = MongoClient('127.0.0.1', 27017)
 db = client.crawl
 db.authenticate("dba", "dba")
 handle = db.get_collection("web")
@@ -14,12 +14,8 @@ handle = db.get_collection("web")
 url = "http://www.cnhongke.org/"
 conf = urlparse(url)
 is_current = True
-page = {}
-digest = {}
-http_200 = {}
-http_403 = {}
+page, url_hash = {}, {}
 param = []
-url_hash = {}
 TOO_LONG = 2 * 1024 * 1024
 useragent = {
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.87 Safari/537.36'}
@@ -40,7 +36,7 @@ def encodeKey(key):
 
 
 def parseFromtext(content, task_url, resp_url):
-    url_hash[resp_url], url_hash[task_url], http_200[resp_url] = True, True, True
+    url_hash[resp_url], url_hash[task_url] = True, True
     handle.insert({encodeKey(task_url): content})
     url_list = []
     soup = BeautifulSoup(content, 'html.parser')
