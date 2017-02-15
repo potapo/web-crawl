@@ -1,114 +1,126 @@
 import aiohttp
 import asyncio
 from bs4 import BeautifulSoup
-import os
-from urllib.parse import urlparse, urlunparse
-from cos_dist import cos_dist
-from pymongo import MongoClient
-
-client = MongoClient('127.0.0.1', 27017)
-db = client.crawl
-db.authenticate("dba", "dba")
-handle = db.get_collection("web")
-
-url = "http://www.cnhongke.org/"
-conf = urlparse(url)
-is_current = True
-page, url_hash = {}, {}
-param = []
-TOO_LONG = 2 * 1024 * 1024
-useragent = {
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.87 Safari/537.36'}
+import random
+import sys
+from urllib.parse import urlparse, urlunparse, parse_qs
 
 
-class HTTPOKError(Exception):
+class HTTPOKError (Exception):
     """Base class for exceptions in this module."""
     pass
 
 
-class CONTTOLONGError(Exception):
+class CONTTOLONGError (Exception):
     """Base class for exceptions in this module."""
     pass
 
 
-def encodeKey(key):
-    return key.replace('\\', "\\\\").replace("\$", "\\u0024").replace(".", "\\u002e")
+class crawl:
+    def __init__ (self, target, headers, is_current = True):
+        self.target = target
+        self.task = []
+        self.headers = headers
+        self.conf = urlparse (target)
+        self.page, self.url_hash = {}, {}
+        self.param = []
+        self.forbidden = []
+        self.TOO_LONG = 2 * 1024 * 1024
+        self.task.append (target)
+        self.is_current = is_current
+        self.loop = asyncio.get_event_loop ()
+        self.scan = False
+        pass
+
+    def read (self, file):
+        with open (file, "r") as f:
+            for i in f.readlines ():
+                self.task.append (self.target + i)
+
+    def encodeKey (self, key):
+        return key.replace ('\\', "\\\\").replace ("\$", "\\u0024").replace (".", "\\u002e")
+
+    @property
+    def first_name (self):
+        return self._first_name
 
 
-def parseFromtext(content, task_url, resp_url):
-    url_hash[resp_url], url_hash[task_url] = True, True
-    handle.insert({encodeKey(task_url): content})
-    url_list = []
-    soup = BeautifulSoup(content, 'html.parser')
-    a_list = [tag.get('href') for tag in soup.find_all('a')]
-    for tag in a_list:
-        result = urlparse(tag)
-        if result.scheme != '' and result.scheme != 'http' and result.scheme != 'https': continue
-        link = []
-        link.append(conf.scheme if result.scheme == '' else result.scheme)
-        link.append(conf.netloc if result.netloc == '' else result.netloc)
-        if link[1] != conf.netloc and is_current: continue
-        link.append(conf.path if result.path == '' else result.path)
-        link.extend(result[3:])
-        link = urlunparse(link)
-        if link not in url_hash.keys(): url_hash[link] = False
-        if result.path not in page.keys():
-            page[result.path] = link
-            url_list.append(link)
-        else:
-            if cos_dist(link, page[result.path]) < 0.7:
-                url_list.append(link)
-    return url_list
 
-
-async def fetch(client, task_url):
-    url_list = []
-    await asyncio.sleep(0.5)
-    try:
-        async with client.get(task_url, headers=useragent, timeout=2, allow_redirects=False) as resp:
-            try:
-                if resp.status != 200: raise HTTPOKError
-                if 'content-length' in resp.headers.keys() and int(resp.headers['content-length']) > TOO_LONG:
-                    raise CONTTOLONGError
-                else:
-                    if "text/html" in resp.headers['Content-Type']: pass
-                url_list = parseFromtext(await resp.text(), task_url, resp.url)
-                print(task_url)
-                param.append(task_url)
-            except KeyError:
-                print('key not in dict')
-            except UnicodeDecodeError:
-                print("found unsupport character ,closing...")
-            except HTTPOKError:
-                print("response not 200,closing")
-            except CONTTOLONGError:
-                print('content-length is too long ,closing...')
-            finally:
-                resp.close()
-    except asyncio.TimeoutError:
-        print('timeout,closing...')
-    except aiohttp.errors.ClientOSError:
-        print("ertificate verify failed")
-    finally:
+    def parseFromtext (self, content, task_url, resp_url):
+        self.url_hash[resp_url], self.url_hash[task_url] = True, True
+        url_list = []
+        soup = BeautifulSoup (content, 'html.parser')
+        weblist = [tag.get ('href') for tag in soup.find_all ('a')]
+        for tag in weblist:
+            result = urlparse (tag)
+            if result.scheme != '' and result.scheme != 'http' and result.scheme != 'https': continue
+            link = []
+            link.append (self.conf.scheme if result.scheme == '' else result.scheme)
+            link.append (self.conf.netloc if result.netloc == '' else result.netloc)
+            if link[1] != self.conf.netloc and self.is_current: continue
+            link.append (self.conf.path if result.path == '' else result.path)
+            link.extend (result[3:])
+            link = urlunparse (link)
+            if link not in self.url_hash:
+                self.url_hash[link] = False
+                self.task.append (link)
+            param = parse_qs (result.query).keys ()
+            query = ''.join ([i for i in sorted (param)])
+            if result.path + query not in self.page.keys ():
+                self.page[result.path + query] = link
         return url_list
 
+    async def fetch (self, client, task_url):
+        url_list = []
+        await asyncio.sleep (random.randrange (0, 4) + random.random ())
+        try:
+            async with client.get (task_url, compress=True, timeout=5, allow_redirects=False) as resp:
+                try:
+                    if resp.status != 200:
+                        raise HTTPOKError
+                    else:
+                        if "text/html" in resp.headers['Content-Type']: pass
+                    if not self.scan:
+                        url_list = self.parseFromtext (await resp.text (), task_url, resp.url)
+                except KeyError:
+                    print ('key not in dict')
+                except UnicodeDecodeError:
+                    print ("found unsupport character ,closing...")
+                except HTTPOKError:
+                    if resp.status == 403: self.forbidden.append (resp.url)
+                except CONTTOLONGError:
+                    print ('content-length is too long ,closing...')
+                else:
+                    print (task_url)
+                    self.param.append (task_url)
+                finally:
+                    pass
+        except asyncio.TimeoutError:
+            print ('timeout,closing...')
+        except aiohttp.errors.ClientOSError:
+            print ("Certificate verify failed or other error")
+        except (ConnectionResetError, aiohttp.errors.ServerDisconnectedError, aiohttp.errors.ClientResponseError):
+            print ("Connection reset by peer")
+            sys.exit (1)
+        finally:
+            self.task.extend (url_list)
 
-async def main(loop, url):
-    task = [url]
-    async with aiohttp.ClientSession(loop=loop) as client:
-        while len(task) > 0:
-            task_url = task.pop()
-            if task_url in url_hash.keys() and url_hash.get(task_url): continue
-            task.extend(await fetch(client, task_url))
+    def run (self):
+        with aiohttp.ClientSession (loop=self.loop, headers=self.headers) as client:
+            while len (self.task) > 0:
+                u = []
+                curr, self.task = self.task[0:1000], self.task[1000:len (self.task)]
+                while len (curr) > 0:
+                    url = curr.pop ()
+                    if url in self.url_hash.keys () and self.url_hash.get (url): continue
+                    u.append (self.fetch (client, url))
+                if len (u) <= 0: break
+                self.loop.run_until_complete (asyncio.wait (u))
+        self.loop.close ()
+        print ("done")
+        return self.param, self.forbidden, self.page
 
-
-try:
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main(loop, url))
-except KeyboardInterrupt:
-    pass
-finally:
-    print("well done")
-    with open('crawl.txt', "w") as f:
-        for i in param:
-            f.writelines(i + os.linesep)
+    def webscan (self, file):
+        self.read (file)
+        self.scan = True
+        return self.run ()
